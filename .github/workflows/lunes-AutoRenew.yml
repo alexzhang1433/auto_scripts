@@ -72,6 +72,17 @@ jobs:
           python -m playwright install chromium
         working-directory: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ env.PROJECT_DIR }}
 
+      # 步骤 5.6: 安装 Hysteria2（如果需要代理）
+      - name: 📡 安装 Hysteria2
+        run: |
+          if [ -n "${{ secrets.HY2_PROXY_URL }}" ]; then
+            echo "安装 Hysteria2..."
+            curl -fsSL https://get.hy2.sh/ | bash
+            echo "✅ Hysteria2 安装完成"
+          else
+            echo "⚠️ 未配置代理，跳过 Hysteria2 安装"
+          fi
+
       # 步骤 6: 添加随机延迟
       - name: ⏳ 添加随机延迟
         run: |
@@ -84,7 +95,7 @@ jobs:
         env:
           ACCOUNTS_BATCH: ${{ secrets.LUNES_ACCOUNTS_BATCH }}
           HY2_PROXY_URL: ${{ secrets.HY2_PROXY_URL }}
-          SOCKS_PORT: ${{ secrets.SOCKS_PORT }}
+          SOCKS_PORT: ${{ secrets.SOCKS_PORT || '51080' }}
           SCREENSHOT_DIR: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ env.PROJECT_DIR }}/screenshots
         run: xvfb-run -a python ${{ env.SCRIPT_NAME }}
         working-directory: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ env.PROJECT_DIR }}
