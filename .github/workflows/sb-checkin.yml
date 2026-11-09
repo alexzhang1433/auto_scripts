@@ -111,7 +111,7 @@ jobs:
             export HY2_PROXY_URL=""
             echo "🔌 直连模式：已清空 HY2_PROXY_URL"
           fi
-          xvfb-run -a python ${{ env.SCRIPT_NAME }}
+          xvfb-run -a -s "-screen 0 1920x1080x24" python ${{ env.SCRIPT_NAME }}
         working-directory: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ env.PROJECT_DIR }}
 
       # 步骤 8: 提交时间文件（保活，避免 60 天无提交被停用）
