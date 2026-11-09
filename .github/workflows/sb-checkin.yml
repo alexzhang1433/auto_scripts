@@ -3,6 +3,11 @@ name: 🥞 烧饼论坛 Auto Checkin
 on:
   # 手动触发
   workflow_dispatch:
+    inputs:
+      proxy:
+        description: '是否走 HY2 代理（选 false = 直连，用来测 GitHub 出口 IP 能不能过 Cap）'
+        type: boolean
+        default: true
 
   # 定时触发（UTC）：2 次签到，确保不漏签
   # 16:20 UTC = 次日 00:20 北京时间；04:20 UTC = 12:20 北京时间
@@ -99,7 +104,14 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           HY2_PROXY_URL: ${{ secrets.HY2_PROXY_URL }}
           SOCKS_PORT: ${{ secrets.SOCKS_PORT || '51080' }}
-        run: xvfb-run -a python ${{ env.SCRIPT_NAME }}
+        run: |
+          # 手动触发时可选 proxy=false 走直连：GitHub Actions 的出口 IP 能不能过
+          # Cap，只能这样实测。cron 触发时 inputs.proxy 为空，保持走代理。
+          if [ "${{ inputs.proxy }}" = "false" ]; then
+            export HY2_PROXY_URL=""
+            echo "🔌 直连模式：已清空 HY2_PROXY_URL"
+          fi
+          xvfb-run -a python ${{ env.SCRIPT_NAME }}
         working-directory: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ env.PROJECT_DIR }}
 
       # 步骤 8: 提交时间文件（保活，避免 60 天无提交被停用）
