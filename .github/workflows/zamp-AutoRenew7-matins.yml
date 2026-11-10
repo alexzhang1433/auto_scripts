@@ -59,6 +59,9 @@ jobs:
           else
             pip install seleniumbase>=4.25.0 pyvirtualdisplay>=3.0 requests>=2.31.0
           fi
+          # reCAPTCHA 语音挑战：识别 + 静态 ffmpeg（不装 apt 那一大坨）
+          # audioop 在 Python 3.11 里还在标准库，audioop-lts 只给 3.13+ 用，别装
+          pip install 'SpeechRecognition>=3.17.0' 'imageio-ffmpeg>=0.5,<1'
 
       - name: 安装代理
         working-directory: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ env.PROJECT_DIR }}
