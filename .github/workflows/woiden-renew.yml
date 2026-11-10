@@ -337,8 +337,10 @@ jobs:
             git reset --hard origin/main
             sleep 2
           done
-          echo "3 次推送均失败"
-          exit 1
+          # 时间文件只是元数据，写完推不上去不该让整条工作流变红：
+          # 续期本身已经在前面跑完并发了 TG 通知，这里降级成告警即可。
+          echo "::warning::3 次推送均失败，本次时间文件未更新（不影响续期结果）"
+          exit 0
 
       - name: 🧹 清理旧的工作流运行记录
         if: always()
