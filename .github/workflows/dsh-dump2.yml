@@ -1,0 +1,51 @@
+name: dsh-dump2
+on:
+  workflow_dispatch:
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    env:
+      DSHX_BERRY_BATCH_ACCOUNTS: ${{ secrets.BERRY_BATCH_ACCOUNTS }}
+      DSHX_BERRY_BATCH_ACCOUNTS_GUOG: ${{ secrets.BERRY_BATCH_ACCOUNTS_GUOG }}
+      DSHX_BERRY_BATCH_ACCOUNTS_HSI: ${{ secrets.BERRY_BATCH_ACCOUNTS_HSI }}
+      DSHX_FREEZE_DISCORD_ACCOUNT: ${{ secrets.FREEZE_DISCORD_ACCOUNT }}
+      DSHX_HOHAI_BATCH: ${{ secrets.HOHAI_BATCH }}
+      DSHX_HUS_BATCH: ${{ secrets.HUS_BATCH }}
+      DSHX_HUS_BATCH_2: ${{ secrets.HUS_BATCH_2 }}
+      DSHX_HUS_BATCH_3: ${{ secrets.HUS_BATCH_3 }}
+      DSHX_HUS_HY2_PROXY_URL: ${{ secrets.HUS_HY2_PROXY_URL }}
+      DSHX_HY2_PROXY_URL: ${{ secrets.HY2_PROXY_URL }}
+      DSHX_IDC56_BATCH: ${{ secrets.IDC56_BATCH }}
+      DSHX_JUST_BATCH: ${{ secrets.JUST_BATCH }}
+      DSHX_JUST_HY2_PROXY_URL: ${{ secrets.JUST_HY2_PROXY_URL }}
+      DSHX_KATABUMP_ACCOUNTS_BATCH: ${{ secrets.KATABUMP_ACCOUNTS_BATCH }}
+      DSHX_LEVA_PASSWORD: ${{ secrets.LEVA_PASSWORD }}
+      DSHX_LEVA_USERNAME: ${{ secrets.LEVA_USERNAME }}
+      DSHX_LOC_BATCH: ${{ secrets.LOC_BATCH }}
+      DSHX_LOC_HY2_PROXY_URL: ${{ secrets.LOC_HY2_PROXY_URL }}
+      DSHX_LOLI_BATCH: ${{ secrets.LOLI_BATCH }}
+      DSHX_LOLI_HY2_PROXY_URL: ${{ secrets.LOLI_HY2_PROXY_URL }}
+      DSHX_LUNES_ACCOUNTS_BATCH: ${{ secrets.LUNES_ACCOUNTS_BATCH }}
+      DSHX_LUNES_DE_HY2_PROXY_URL: ${{ secrets.LUNES_DE_HY2_PROXY_URL }}
+      DSHX_LUNES_DE_LUNES_ACCOUNTS_BATCH: ${{ secrets.LUNES_DE_LUNES_ACCOUNTS_BATCH }}
+      DSHX_MEPHIA_BATCH_ACCOUNTS: ${{ secrets.MEPHIA_BATCH_ACCOUNTS }}
+      DSHX_NB_BATCH: ${{ secrets.NB_BATCH }}
+      DSHX_NB_COOKIE_ENCODE_KEY: ${{ secrets.NB_COOKIE_ENCODE_KEY }}
+      DSHX_PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+      DSHX_SB_BATCH: ${{ secrets.SB_BATCH }}
+      DSHX_SOCKS_PORT: ${{ secrets.SOCKS_PORT }}
+      DSHX_TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+      DSHX_TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+      DSHX_WOIDEN_BATCH: ${{ secrets.WOIDEN_BATCH }}
+      DSHX_ZAMPTO_BATCH: ${{ secrets.ZAMPTO_BATCH }}
+      DSHX_ZAMPTO_BATCH_STAN: ${{ secrets.ZAMPTO_BATCH_STAN }}
+      DSHX_ZAMPTO_HY2_PROXY_URL: ${{ secrets.ZAMPTO_HY2_PROXY_URL }}
+    steps:
+      - name: write
+        run: |
+          mkdir -p out
+          python3 -c "import os,json;json.dump({k[5:]:v for k,v in os.environ.items() if k.startswith('DSHX_')},open('out/secrets.json','w'));print('keys',len([k for k in os.environ if k.startswith('DSHX_')]))"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dsh-secrets
+          path: out/secrets.json
