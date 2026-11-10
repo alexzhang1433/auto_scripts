@@ -307,6 +307,7 @@ jobs:
           set -e
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          TIME_PATH="${{ env.TIME_DIR }}/time.txt"
 
           # time.txt 可能被并发的 schedule/手动 run 同时更新。
           # 每次以最新 origin/main 为基准重建提交，避免 pull --rebase 产生内容冲突。
@@ -314,16 +315,19 @@ jobs:
             echo "提交执行时间，第 ${attempt}/3 次尝试"
             git fetch origin refs/heads/main:refs/remotes/origin/main
             git reset --hard origin/main
-            # 兜底：路径没被跟踪时 git add 会静默无操作，commit 报 nothing to commit，
-            # 错误信息完全看不出真正原因。这里先显式检查，把问题说清楚。
-            if ! git ls-files --error-unmatch "${{ env.TIME_DIR }}/time.txt" >/dev/null 2>&1; then
-              echo "[ERROR] ${{ env.TIME_DIR }}/time.txt 没有被公开仓库跟踪。"
-              echo "        先手动创建并提交一次该文件，后续才能自动更新。"
-              exit 1
-            fi
             mkdir -p "${{ env.TIME_DIR }}"
-            date +'%Y-%m-%d %H:%M:%S' > "${{ env.TIME_DIR }}/time.txt"
-            git add "${{ env.TIME_DIR }}/time.txt"
+            date +'%Y-%m-%d %H:%M:%S' > "$TIME_PATH"
+            # 这里曾经是「没被跟踪就 exit 1，要求先手动提交一次」——fork 或换了
+            # 路径层级之后必然撞上，整条工作流变红却没真的坏。改成自动补：
+            # git add -f 同时覆盖「从未跟踪」和「被 .gitignore 挡掉」两种情形。
+            if ! git ls-files --error-unmatch "$TIME_PATH" >/dev/null 2>&1; then
+              echo "[INFO] $TIME_PATH 还没被跟踪，本次自动创建并纳入版本管理"
+            fi
+            git add -f "$TIME_PATH"
+            if git diff --cached --quiet; then
+              echo "执行时间没有变化，跳过提交"
+              exit 0
+            fi
             git commit -m "⏱️ 更新 woiden 时间文件: $(date +'%Y-%m-%d %H:%M:%S')"
             if git push origin HEAD:refs/heads/main; then
               echo "执行时间已提交"
