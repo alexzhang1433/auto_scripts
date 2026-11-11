@@ -60,7 +60,13 @@ jobs:
 
       - name: 安装系统依赖
         run: |
-          sudo apt-get update && sudo apt-get install -y xvfb fonts-noto-cjk
+          # apt 源偶发 DNS 失败不应让整个 run 变红（run40 曾因 fonts-noto-cjk 拉不到而 exit 100）
+          sudo apt-get update || echo "::warning::apt update 失败，继续"
+          sudo apt-get install -y xvfb fonts-noto-cjk || \
+            (echo "::warning::fonts-noto-cjk 安装失败，重试一次" && sleep 10 && \
+             sudo apt-get install -y --fix-missing xvfb fonts-noto-cjk) || \
+            echo "::warning::系统依赖安装失败，CJK 字体缺失仅影响截图文字渲染"
+          command -v Xvfb >/dev/null && echo "Xvfb 就绪" || echo "::warning::Xvfb 缺失"
 
       - name: 安装 Python 依赖
         run: |
