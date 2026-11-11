@@ -26,8 +26,10 @@ jobs:
       SCREENSHOT_DIR: screenshots
       PROJECT_DIR: zampto-stan
       PRIVATE_REPO: doraemon6789/auto_zampto_private
-      # hCaptcha 图片挑战视觉兜底（glm-4v-flash，免费 key；CLIP 解不了的常识题走这里）
+      # hCaptcha 图片挑战视觉兜底（Groq 免费层，OpenAI 兼容接口；CLIP 解不了的常识/关系题走这里）
       ZAMPTO_VISION_KEY: ${{ secrets.ZAMPTO_VISION_KEY }}
+      ZAMPTO_VISION_BASE: https://api.groq.com/openai/v1
+      ZAMPTO_VISION_MODEL: meta-llama/llama-4-scout-17b-16e-instruct
 
     steps:
       - name: 检出公开仓库
