@@ -50,7 +50,8 @@ jobs:
       group: Hus_Renew_3
       # 手动触发不应该取消正在跑的定时任务——那会把正在续期的账号打断在半路。
       # 设成 false 后，新任务排队等待，而不是抢占。
-      cancel-in-progress: true
+      # 手动触发不取消正在跑的 run：新 run 排队等待，避免打断续期/签到半路
+      cancel-in-progress: false
     env:
       # ════════════════════════════════════════════════════════════════
       # Secrets（在公开 repo → Settings → Secrets 中配置）
@@ -305,8 +306,7 @@ jobs:
             git reset --hard origin/main
             sleep 2
           done
-          echo "3 次推送均失败"
-          exit 1
+          echo "::warning::time.txt 3 次推送均失败，本次未更新（不影响续期/签到结果）"
 
       - name: 🧹 清理旧的工作流运行记录
         if: always()

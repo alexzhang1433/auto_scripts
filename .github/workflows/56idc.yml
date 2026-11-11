@@ -133,10 +133,17 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           mkdir -p ${{ env.PROJECT_DIR }} && echo "$(date +'%Y-%m-%d %H:%M:%S')" > ${{ env.PROJECT_DIR }}/time.txt
           git add ${{ env.PROJECT_DIR }}/time.txt 2>/dev/null || true
-          if git diff --cached --quiet; then
-            echo "无变化，无需提交"
-          else
+          # 并发安全提交：每次以最新远端为基准重建提交，重试 3 次；
+          # 最终失败只告警不让 run 变红（time.txt 仅为保活元数据）
+          for _try in 1 2 3; do
+            git fetch origin main
+            git reset --soft FETCH_HEAD
             git commit -m "⏱️ 更新时间文件: $(date +'%Y-%m-%d %H:%M:%S')"
-            git pull --rebase origin main  # 拉取远程更新
-            git push origin HEAD:main
-          fi
+            if git push origin HEAD:main; then
+              echo "执行时间已提交"
+              exit 0
+            fi
+            echo "第 $_try 次推送冲突，重取远端后重试"
+            sleep 3
+          done
+          echo "::warning::time.txt 3 次推送均失败，本次未更新（不影响本次执行结果）"

@@ -147,12 +147,13 @@ jobs:
               git fetch origin main
               if git push origin HEAD:main; then
                 echo "✅ 更改已推送"
-                break
+                exit 0
               fi
-              echo "⚠️ 第 $_try 次推送被拒/失败，重试"
+              echo "第 $_try 次推送被拒/失败，重试"
               git fetch origin main
               git reset --soft FETCH_HEAD
               sleep 3
             done
+            echo "::warning::time.txt 3 次推送均失败，本次未更新（不影响本次执行结果）"
           fi
 

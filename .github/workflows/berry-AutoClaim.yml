@@ -85,9 +85,19 @@ jobs:
           if git diff --cached --quiet; then
             echo "无变化，无需提交"
           else
-            TIMESTAMP=$(date +'%Y-%m-%d %H:%M:%S')
-            git commit -m "⏱️ 更新 ${{ env.PROJECT_DIR }} 执行时间: $TIMESTAMP"
-            git push origin main
-            echo "✅ 更改已推送到公开库"
+            # 并发安全提交：每次以最新远端为基准重建提交，重试 3 次；失败只告警
+            COMMIT_MSG="⏱️ 更新 ${{ env.PROJECT_DIR }} 执行时间: $(date +'%Y-%m-%d %H:%M:%S')"
+            for _try in 1 2 3; do
+              git fetch origin main
+              git reset --soft FETCH_HEAD
+              git commit -m "$COMMIT_MSG"
+              if git push origin HEAD:main; then
+                echo "✅ 更改已推送到公开库"
+                exit 0
+              fi
+              echo "第 $_try 次推送冲突，重取远端后重试"
+              sleep 3
+            done
+            echo "::warning::time.txt 3 次推送均失败，本次未更新（不影响本次执行结果）"
           fi
 
