@@ -26,6 +26,8 @@ jobs:
       SCREENSHOT_DIR: screenshots
       PROJECT_DIR: zampto-stan
       PRIVATE_REPO: doraemon6789/auto_zampto_private
+      # hCaptcha 图片挑战视觉兜底（glm-4v-flash，免费 key；CLIP 解不了的常识题走这里）
+      ZAMPTO_VISION_KEY: ${{ secrets.ZAMPTO_VISION_KEY }}
 
     steps:
       - name: 检出公开仓库
