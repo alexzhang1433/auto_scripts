@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     # 60 分钟不够：单台服务器最坏路径 = 20 次 captcha 重试 × 20 轮 IP 轮换 × 10s
     # 命令超时，被硬砍会在账号处理到一半时中断（留下"续了一半"的状态）。
-    timeout-minutes: 240
+    timeout-minutes: 60
     concurrency:
       group: Woiden_Renew
       # 手动触发不应该取消正在跑的定时任务——那会把正在续期的账号打断在半路。
@@ -234,43 +234,22 @@ jobs:
           echo "随机延迟: ${delay}秒"
           sleep $delay
 
-      - name: 执行续期（最多 3 轮，失败隔 30 分钟）
+      - name: 执行续期
         working-directory: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ env.PROJECT_DIR }}
-        env:
-          # 当日状态密文：落在公开仓库的 TIME_DIR 下。密钥在私有库（.hus_state_key），
-          # 公开仓库与 workflow 里都不出现；fork 者没有密钥时脚本自动降级为无状态模式。
-          # 状态文件路径由脚本按 TIME_DIR 自动推导（<仓库根>/<TIME_DIR>/state.enc），
-          # 无需在这里配置 STATE_FILE。
-          RENEW_MAX_ATTEMPTS: "3"
-          RENEW_RETRY_WAIT: "1800"
         run: |
-          # 每轮独立跑一次脚本；失败且还有剩余轮次时等 30 分钟再试，保证 23 小时内
-          # 至少成功一次。「今天已经成功过就跳过」由脚本内部读 state.enc 判断，
-          # 这里只负责重试节奏，不感知任何密钥。
-          # 脚本自己读工作区的 <TIME_DIR>/state.enc 判断「今天是否已成功」，无需预拷。
+          # 单次执行：本 workflow 一天多班（见 cron），失败由下一班自然重试；
+          # 当日已成功的账号由 state.enc 幂等跳过，无需 workflow 内循环等待。
           set +e
-          status=1
-          for attempt in $(seq 1 "$RENEW_MAX_ATTEMPTS"); do
-            echo "===== 第 ${attempt}/${RENEW_MAX_ATTEMPTS} 轮 ====="
-            python3 -u "${{ env.SCRIPT_NAME }}" > "run-${attempt}.log" 2>&1
-            status=$?
-            cp "run-${attempt}.log" "${{ env.SCRIPT_NAME }}.log" 2>/dev/null || true
-            echo "---- 第 ${attempt} 轮退出码: ${status} ----"
-            # 失败时铺完整日志：tail -n 80 常常正好把启动阶段的致命错误截掉。
-            if [ "$status" -ne 0 ]; then
-              echo "---- 第 ${attempt} 轮日志全文（失败，完整输出）----"
-              cat "run-${attempt}.log" || true
-            else
-              echo "---- 第 ${attempt} 轮日志尾部（最后 80 行）----"
-              tail -n 80 "run-${attempt}.log" || true
-            fi
-            [ "$status" -eq 0 ] && break
-            if [ "$attempt" -lt "$RENEW_MAX_ATTEMPTS" ]; then
-              echo "[WAIT] 本轮失败，$((RENEW_RETRY_WAIT / 60)) 分钟后重试"
-              sleep "$RENEW_RETRY_WAIT"
-            fi
-          done
-          echo "---- 最终退出码: ${status} ----"
+          python3 -u "${{ env.SCRIPT_NAME }}" > woiden-renew.log 2>&1
+          status=$?
+          if [ "$status" -ne 0 ]; then
+          echo "----日志全文（失败，完整输出）----"
+          cat woiden-renew.log || true
+          else
+          echo "----日志尾部（最后 80 行）----"
+          tail -n 80 woiden-renew.log || true
+          fi
+          echo "---- 退出码: ${status} ----"
           exit "$status"
 
       - name: 上传截图
@@ -287,7 +266,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: woiden-renew-log-${{ github.run_id }}
-          path: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ env.PROJECT_DIR }}/${{ env.SCRIPT_NAME }}.log
+          path: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ env.PROJECT_DIR }}/woiden-renew.log
           retention-days: 7
           if-no-files-found: warn
 
