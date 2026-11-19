@@ -34,7 +34,7 @@ name: 🔄 Hus Auto Renew ④-liw
 on:
   schedule:
     # 每天三次，北京时间 06:30 / 10:50 / 14:10（名义 UTC 30 22 * * / 50 2 * * / 10 6 * *）。
-    # 五个续期任务全局 40 分钟一槽，每次给上一次运行预留 30 分钟。
+    # 五个续期任务全局 40 分钟一槽，每次给上一班的单次运行预留 30 分钟（单轮实测 1–12 分钟）。
     # 07:50 → 09:30 刻意留 1h40m 空档，避开 loc/leva/9nb/loli/zamp 五个签到任务的密集区（08:02-08:50）。
     # 最晚一班 15:30 + 7.5h 延迟 + 30m 卡顿 = 23:30 收工，不跨天。
     # 幂等由 state 保证：当日已成功则后续触发直接跳过，不会重复续期。
@@ -50,8 +50,8 @@ permissions:
 jobs:
   renew:
     runs-on: ubuntu-latest
-    # 60 分钟不够：单台服务器最坏路径 = 20 次 captcha 重试 × 20 轮 IP 轮换 × 10s 命令超时，
-    # 被硬砍会在账号处理到一半时中断（留下"续了一半"的状态）。
+    # 单次执行（workflow 内不再循环重试，原因见「执行续期」步骤注释）。实测单轮 1–12 分钟，
+    # 60 分钟只作兜底上限：万一被硬砍，由下一班 cron 接手，state.enc 保证已成功的账号不重复续期。
     timeout-minutes: 60
     concurrency:
       group: Hus_Renew_4
@@ -236,8 +236,12 @@ jobs:
       - name: 执行续期
         working-directory: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ env.PROJECT_DIR }}
         run: |
-          # 单次执行：本 workflow 一天多班（见 cron），失败由下一班自然重试；
-          # 当日已成功的账号由 state.enc 幂等跳过，无需 workflow 内循环等待。
+          # 单次执行，刻意不做 workflow 内重试：
+          # · 2026-11-19 之前这里有过「最多 3 轮、每轮失败等 30 分钟」（RENEW_MAX_ATTEMPTS /
+          # RENEW_RETRY_WAIT），已在 commit d06940e1 整体移除。不要再加回来：它会把单班拉到
+          # 90 分钟以上，与下一班 cron 抢 concurrency，收益也被 state.enc 幂等 + 多班触发覆盖。
+          # · 失败重试由「一天三班 cron」承担（见 on.schedule）；当日已成功的账号由 state.enc
+          # 幂等跳过（日志打印「全部 N 个账号均已成功续期 → 本次定时跳过」），不会重复续期。
           set +e
           python3 -u hus-renew.py > hus-renew.log 2>&1
           status=$?
