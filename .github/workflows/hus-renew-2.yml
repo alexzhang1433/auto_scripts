@@ -246,10 +246,10 @@ jobs:
           python3 -u hus-renew.py > hus-renew.log 2>&1
           status=$?
           if [ "$status" -ne 0 ]; then
-          echo "----日志全文（失败，完整输出）----"
+            echo "---- 日志全文（失败，完整输出）----"
             cat hus-renew.log || true
           else
-          echo "----日志尾部（最后 80 行）----"
+            echo "---- 日志尾部（最后 80 行）----"
             tail -n 80 hus-renew.log || true
           fi
           echo "---- 退出码: ${status} ----"
