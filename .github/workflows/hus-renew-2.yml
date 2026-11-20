@@ -238,19 +238,19 @@ jobs:
         run: |
           # 单次执行，刻意不做 workflow 内重试：
           # · 2026-11-19 之前这里有过「最多 3 轮、每轮失败等 30 分钟」（RENEW_MAX_ATTEMPTS /
-          # RENEW_RETRY_WAIT），已在 commit d06940e1 整体移除。不要再加回来：它会把单班拉到
-          # 90 分钟以上，与下一班 cron 抢 concurrency，收益也被 state.enc 幂等 + 多班触发覆盖。
+          #   RENEW_RETRY_WAIT），已在 commit d06940e1 整体移除。不要再加回来：它会把单班拉到
+          #   90 分钟以上，与下一班 cron 抢 concurrency，收益也被 state.enc 幂等 + 多班触发覆盖。
           # · 失败重试由「一天三班 cron」承担（见 on.schedule）；当日已成功的账号由 state.enc
-          # 幂等跳过（日志打印「全部 N 个账号均已成功续期 → 本次定时跳过」），不会重复续期。
+          #   幂等跳过（日志打印「全部 N 个账号均已成功续期 → 本次定时跳过」），不会重复续期。
           set +e
           python3 -u hus-renew.py > hus-renew.log 2>&1
           status=$?
           if [ "$status" -ne 0 ]; then
           echo "----日志全文（失败，完整输出）----"
-          cat hus-renew.log || true
+            cat hus-renew.log || true
           else
           echo "----日志尾部（最后 80 行）----"
-          tail -n 80 hus-renew.log || true
+            tail -n 80 hus-renew.log || true
           fi
           echo "---- 退出码: ${status} ----"
           exit "$status"
