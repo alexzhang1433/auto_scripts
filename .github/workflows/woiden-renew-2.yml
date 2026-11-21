@@ -64,7 +64,7 @@ jobs:
       PROXY_CONTENT: ${{ secrets.HY2_PROXY_URL }}
       SOCKS_PORT: ${{ secrets.SOCKS_PORT || '10808' }}
 
-      # ── 路径 ───────────────────────────────────────────────────────
+      # ── 路径 ────────────────────────────────────────────────────────
       PRIVATE_REPO: doraemon6789/auto_woiden_private
       PROJECT_DIR: woiden
       SCRIPT_NAME: woiden-renew.py
