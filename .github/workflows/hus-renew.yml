@@ -190,16 +190,16 @@ jobs:
           done
           if [ -n "$missing" ]; then
             echo "[INFO] 镜像缺少:$missing，补装"
-            sudo apt-get update -qq
+            sudo apt-get update
             sudo apt-get install -y $missing
           else
             echo "[INFO] 浏览器和基础工具镜像已自带，跳过 apt"
           fi
 
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          # 预生成字体缓存，避免 DrissionPage 启动时因字体扫描慢而超时
-          # 正好撞上 DrissionPage 启动时的字体扫描，直接超时失败
+          pip install --upgrade pip -q
+          pip install -r requirements.txt -q
+          # 预生成字体缓存：Chromium 第一次启动会在容器里现算字体缓存，实测要 20 秒以上，
+          # 正好撞上 DrissionPage 默认的 30 秒连接超时（偶发 BrowserConnectError 的根源）。
           fc-cache -f >/dev/null 2>&1 || true
           FFMPEG_BIN=$(python3 -c 'import imageio_ffmpeg;print(imageio_ffmpeg.get_ffmpeg_exe())')
           sudo ln -sf "$FFMPEG_BIN" /usr/local/bin/ffmpeg
@@ -251,7 +251,7 @@ jobs:
           # · 失败重试由「一天三班 cron」承担（见 on.schedule）；当日已成功的账号由 state.enc
           #   幂等跳过（日志打印「全部 N 个账号均已成功续期 → 本次定时跳过」），不会重复续期。
           set +e
-          python3 -u hus-renew.py
+          python3 -u hus-renew.py > hus-renew.log 2>&1
           status=$?
           if [ "$status" -ne 0 ]; then
             echo "---- 日志全文（失败，完整输出）----"
@@ -270,16 +270,16 @@ jobs:
           name: hus-screenshots-${{ github.run_id }}
           path: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ env.PROJECT_DIR }}/${{ env.SCREENSHOT_DIR }}
           retention-days: 7
-          if-no-files-found: ignore
+          if-no-files-found: warn
 
       - name: 上传日志
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: hus-logs-${{ github.run_id }}
-          path: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ env.PROJECT_DIR }}/*.log
+          name: hus-renew-log-${{ github.run_id }}
+          path: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ env.PROJECT_DIR }}/hus-renew.log
           retention-days: 7
-          if-no-files-found: ignore
+          if-no-files-found: warn
 
       - name: 清理本地截图
         if: always()
@@ -297,16 +297,16 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # 提交前先把 time.txt / state.enc 的旧值保存一份——下面 git reset --hard 会把
-          # 工作区所有已跟踪文件都还原成远端版本（包括本 workflow 刚写好的 state.enc）。
+          # 脚本直接写工作区的 TIME_DIR/state.enc；提交前的 git reset --hard 会把它
+          # 还原成远端旧版，所以先备份到 RUNNER_TEMP，每次 reset 后再恢复。
           STATE_KEEP="$RUNNER_TEMP/state.keep.enc"
           STATE_ABS="${{ github.workspace }}/${{ env.TIME_DIR }}/state.enc"
           # 续期步骤的结论：cancelled 时不回填本次的 state.enc
           RENEW_OUTCOME="${{ steps.renew.outcome }}"
           if [ -f "$STATE_ABS" ]; then cp "$STATE_ABS" "$STATE_KEEP"; fi
 
-          # 最多重试 3 次，应对多个 workflow 同时 git push 撞车的情况
-          # 用「git fetch + git reset --hard」保证：提交基于最新远端提交，
+          # time.txt 可能被并发的 schedule/手动 run 同时更新。
+          # 每次以最新 origin/main 为基准重建提交，避免 pull --rebase 产生内容冲突。
           for attempt in 1 2 3; do
             echo "提交执行时间，第 ${attempt}/3 次尝试"
             git fetch origin refs/heads/main:refs/remotes/origin/main
@@ -321,12 +321,12 @@ jobs:
             fi
             date +'%Y-%m-%d %H:%M:%S' > "${{ env.TIME_DIR }}/time.txt"
             git add "${{ env.TIME_DIR }}/time.txt"
-            # 当日状态密文（只在当天有成功执行时才更新）
+            # 当日状态密文（脚本生成）；没有就不加，不影响提交
             if [ "$RENEW_OUTCOME" != "cancelled" ] && [ -f "${{ env.TIME_DIR }}/state.enc" ]; then
               git add "${{ env.TIME_DIR }}/state.enc"
             fi
             git commit -m "更新时间文件(①): $(date +'%Y-%m-%d %H:%M:%S')"
-            if git push origin HEAD:main; then
+            if git push origin HEAD:refs/heads/main; then
               echo "执行时间已提交"
               exit 0
             fi
