@@ -64,7 +64,7 @@ jobs:
       PROXY_CONTENT: ${{ secrets.HY2_PROXY_URL }}
       SOCKS_PORT: ${{ secrets.SOCKS_PORT || '10808' }}
 
-      # ── 路径 ─────────────────────────────────────────────────────────
+      # ── 路径 ──────────────────────────────────────────────────────────
       PRIVATE_REPO: doraemon6789/auto_woiden_private
       PROJECT_DIR: woiden
       SCRIPT_NAME: woiden-renew.py
@@ -77,7 +77,7 @@ jobs:
       # "nothing to commit" 让 step 红得莫名其妙。
       TIME_DIR: woiden/2
 
-      # ── 运行参数 ──────────────────────────────────────────────────────
+      # ── 运行参数 ───────────────────────────────────────────────────────
       DEBUG_FLAG: "1"
       # 外层：整个续期流程（登录→进页面→解验证码→提交）失败后整体重跑次数
       # （实际执行 = 该值 + 1）
