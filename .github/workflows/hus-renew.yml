@@ -98,6 +98,7 @@ jobs:
       PROJECT_DIR: hus
       # 每份 workflow 各写各的时间文件，多账号并发也不会互相覆盖
       TIME_DIR: hus/1
+
     steps:
       - name: 检出公开仓库
         uses: actions/checkout@v4
@@ -170,13 +171,17 @@ jobs:
       - name: 设置 Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: '3.13'
           cache: pip
           cache-dependency-path: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ env.PROJECT_DIR }}/requirements.txt
 
       - name: 安装依赖
+        working-directory: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ env.PROJECT_DIR }}
         run: |
-          set -e
+          # runner 镜像（Ubuntu 26.04）已自带 Chromium 155 / Xvfb / curl / wget / jq / unzip。
+          # 以前无脑 apt install 这 8 个包，实际只缺 ffmpeg，却拖进 100+ 个依赖、
+          # 48MB、60 个文件，从 azure.archive.ubuntu.com 下只有 ~59KB/s，光装依赖就 834 秒。
+          # 现在：缺什么补什么；ffmpeg 改用 PyPI 的静态二进制（走 PyPI，实测 11 秒装完全部 pip 包）。
           missing=""
           command -v chromium >/dev/null 2>&1 || command -v chromium-browser >/dev/null 2>&1 \
             || missing="$missing chromium"
@@ -185,34 +190,41 @@ jobs:
           done
           if [ -n "$missing" ]; then
             echo "[INFO] 镜像缺少:$missing，补装"
-            sudo apt-get update
+            sudo apt-get update -qq
             sudo apt-get install -y $missing
           else
             echo "[INFO] 浏览器和基础工具镜像已自带，跳过 apt"
           fi
-          pip install --upgrade pip -q
-          pip install -r requirements.txt -q
+
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          # 预生成字体缓存，避免 DrissionPage 启动时因字体扫描慢而超时
+          # 正好撞上 DrissionPage 启动时的字体扫描，直接超时失败
           fc-cache -f >/dev/null 2>&1 || true
           FFMPEG_BIN=$(python3 -c 'import imageio_ffmpeg;print(imageio_ffmpeg.get_ffmpeg_exe())')
           sudo ln -sf "$FFMPEG_BIN" /usr/local/bin/ffmpeg
           echo "[INFO] ffmpeg: $(ffmpeg -version | head -1)"
           for b in chromium chromium-browser google-chrome google-chrome-stable; do
             if command -v "$b" >/dev/null 2>&1; then
-              echo "[INFO] 浏览器 $b: $($b --version 2>&1 | head -1) → $(command -v "$b")"
+              echo "[INFO] 浏览器 $b: $("$b" --version 2>&1 | head -1) → $(command -v "$b")"
             fi
           done
           python3 -c 'import speech_recognition, pydub, audioop; print("语音依赖导入成功")'
 
       - name: 启用 WARP
         uses: fscarmen/warp-on-actions@v1.3
+        with:
+          stack: ipv4
+          mode: client
 
       - name: 安装代理
+        working-directory: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ env.PROJECT_DIR }}
         run: |
-          set -e
           if [ -z "$PROXY_CONTENT" ]; then
-            echo "::warning::PROXY_CONTENT 为空，跳过代理安装（脚本将直连）"
+            echo "[INFO] 未配置代理，直连模式"
             exit 0
           fi
+
           SB_VER="1.13.14"
           ARCHIVE="sing-box-${SB_VER}-linux-amd64.tar.gz"
           wget -q "https://github.com/SagerNet/sing-box/releases/download/v${SB_VER}/${ARCHIVE}"
@@ -225,7 +237,7 @@ jobs:
       - name: 随机延迟
         run: |
           delay=$((RANDOM % 120))
-          echo "随机延迟 ${delay} 秒"
+          echo "随机延迟: ${delay}秒"
           sleep $delay
 
       - name: 执行续期
@@ -233,48 +245,50 @@ jobs:
         working-directory: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ env.PROJECT_DIR }}
         run: |
           # 单次执行，刻意不做 workflow 内重试：
-          #   · 2026-11-19 提交 d06940e1 后，续期流程已经自带外层重试（MAX_RENEW_RETRIES=3，
-          #     即触发后还会把整个续期流程重复 3 次），workflow 级再套一层重试只会让同一次触发
-          #     重复扣次数。
-          #   · 失败的 run 会直接由下一班 cron 接手，state.enc 保证已成功的不重复续期。
+          # · 2026-11-19 之前这里有过「最多 3 轮、每轮失败等 30 分钟」（RENEW_MAX_ATTEMPTS /
+          #   RENEW_RETRY_WAIT），已在 commit d06940e1 整体移除。不要再加回来：它会把单班拉到
+          #   90 分钟以上，与下一班 cron 抢 concurrency，收益也被 state.enc 幂等 + 多班触发覆盖。
+          # · 失败重试由「一天三班 cron」承担（见 on.schedule）；当日已成功的账号由 state.enc
+          #   幂等跳过（日志打印「全部 N 个账号均已成功续期 → 本次定时跳过」），不会重复续期。
           set +e
-          python3 -u hus-renew.py > hus-renew.log 2>&1
-          code=$?
-          echo "脚本退出码: $code"
-          if [ -s hus-renew.log ]; then
-            tail -n 80 hus-renew.log
+          python3 -u hus-renew.py
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "---- 日志全文（失败，完整输出）----"
+            cat hus-renew.log || true
+          else
+            echo "---- 日志尾部（最后 80 行）----"
+            tail -n 80 hus-renew.log || true
           fi
-          if [ "$code" != "0" ]; then
-            echo "::warning::脚本退出码非 0（$code），但本次不重试，等待下一班"
-          fi
-          exit 0
+          echo "---- 退出码: ${status} ----"
+          exit "$status"
 
       - name: 上传截图
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: hus-screenshots-${{ github.run_id }}
-          path: |
-            ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ env.PROJECT_DIR }}/${{ env.SCREENSHOT_DIR }}
-          if-no-files-found: warn
+          path: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ env.PROJECT_DIR }}/${{ env.SCREENSHOT_DIR }}
           retention-days: 7
+          if-no-files-found: ignore
 
       - name: 上传日志
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: hus-renew-log-${{ github.run_id }}
-          path: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ env.PROJECT_DIR }}/hus-renew.log
-          if-no-files-found: warn
+          name: hus-logs-${{ github.run_id }}
+          path: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ env.PROJECT_DIR }}/*.log
           retention-days: 7
+          if-no-files-found: ignore
 
       - name: 清理本地截图
         if: always()
-        env:
-          SCREENSHOT_PATH: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ env.PROJECT_DIR }}/${{ env.SCREENSHOT_DIR }}
         run: |
-          rm -rf "$SCREENSHOT_PATH"
-          echo "本地截图已清理"
+          SCREENSHOT_PATH="${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ env.PROJECT_DIR }}/${{ env.SCREENSHOT_DIR }}"
+          if [ -d "$SCREENSHOT_PATH" ]; then
+            rm -rf "$SCREENSHOT_PATH"/*
+            echo "本地截图已清理"
+          fi
 
       - name: 提交执行时间
         if: always()
@@ -283,33 +297,36 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # 脚本直接写工作区的 TIME_DIR/state.enc；提交前的 git reset --hard 会把它
-          # 还原成远端旧版，所以先备份到 RUNNER_TEMP，每次 reset 后再恢复。
+          # 提交前先把 time.txt / state.enc 的旧值保存一份——下面 git reset --hard 会把
+          # 工作区所有已跟踪文件都还原成远端版本（包括本 workflow 刚写好的 state.enc）。
           STATE_KEEP="$RUNNER_TEMP/state.keep.enc"
           STATE_ABS="${{ github.workspace }}/${{ env.TIME_DIR }}/state.enc"
           # 续期步骤的结论：cancelled 时不回填本次的 state.enc
           RENEW_OUTCOME="${{ steps.renew.outcome }}"
           if [ -f "$STATE_ABS" ]; then cp "$STATE_ABS" "$STATE_KEEP"; fi
 
-          # time.txt 可能被并发的 schedule/手动 run 同时更新。
-          # 每次以最新 origin/main 为基准重建提交，避免 pull --rebase 产生内容冲突。
+          # 最多重试 3 次，应对多个 workflow 同时 git push 撞车的情况
+          # 用「git fetch + git reset --hard」保证：提交基于最新远端提交，
           for attempt in 1 2 3; do
             echo "提交执行时间，第 ${attempt}/3 次尝试"
             git fetch origin refs/heads/main:refs/remotes/origin/main
             git reset --hard origin/main
             mkdir -p "${{ env.TIME_DIR }}"
             # reset --hard 会把已跟踪的 state.enc 还原成远端旧版，用备份恢复
+            # 「执行续期」被取消（手动取消 / runner 回收 / 平台侧中断）时，
+            # 那一次运行没有产生任何成功记录，把它的 state.enc 落盘只会污染当日计数、
+            # 让下一班误报「本日第 N 次执行」。此时保留 origin/main 里的旧 state。
             if [ "$RENEW_OUTCOME" != "cancelled" ] && [ -f "$STATE_KEEP" ]; then
               cp "$STATE_KEEP" "$STATE_ABS"
             fi
             date +'%Y-%m-%d %H:%M:%S' > "${{ env.TIME_DIR }}/time.txt"
             git add "${{ env.TIME_DIR }}/time.txt"
-            # 当日状态密文（脚本生成）；没有就不加，不影响提交
+            # 当日状态密文（只在当天有成功执行时才更新）
             if [ "$RENEW_OUTCOME" != "cancelled" ] && [ -f "${{ env.TIME_DIR }}/state.enc" ]; then
               git add "${{ env.TIME_DIR }}/state.enc"
             fi
             git commit -m "更新时间文件(①): $(date +'%Y-%m-%d %H:%M:%S')"
-            if git push origin HEAD:refs/heads/main; then
+            if git push origin HEAD:main; then
               echo "执行时间已提交"
               exit 0
             fi
@@ -322,31 +339,39 @@ jobs:
       - name: 🧹 清理旧的工作流运行记录
         if: always()
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          echo "开始清理 24 小时前的已完成运行记录..."
+          set +e
+          current_run="${{ github.run_id }}"
+          cutoff_epoch=$(date -d '24 hours ago' +%s)
           runs=$(gh run list \
             --repo "$GITHUB_REPOSITORY" \
             --limit=100 \
             --json databaseId,createdAt,status \
             --jq '.[] | [.databaseId, .createdAt, .status] | @tsv' 2>/dev/null)
           if [ -z "$runs" ]; then
-            echo "没有运行记录，跳过"
+            echo "没有找到可清理的运行记录"
             exit 0
           fi
-          cutoff=$(date -u -d '24 hours ago' +%s)
+
+          # 先筛出该删的，再并发删除。
+          # 以前逐条 gh run delete（每次约 1 秒），几十条历史就是 70 多秒；
+          # 改成 xargs -P 10 之后只要几秒。
           to_delete=$(while IFS=$'\t' read -r run_id created_at status; do
-            if [ "$status" = "completed" ] && [ -n "$created_at" ]; then
-              ts=$(date -u -d "$created_at" +%s 2>/dev/null || echo 0)
-              if [ "$ts" -lt "$cutoff" ] && [ "$ts" != "0" ]; then
-                echo "$run_id"
-              fi
-            fi
+            [ -z "$run_id" ] && continue
+            [ "$run_id" = "$current_run" ] && continue
+            [ "$status" != "completed" ] && continue
+            created_epoch=$(date -d "$created_at" +%s 2>/dev/null || echo 0)
+            [ "$created_epoch" -ge "$cutoff_epoch" ] && continue
+            echo "$run_id"
           done <<< "$runs")
+
           if [ -z "$to_delete" ]; then
-            echo "没有需要删除的旧运行记录"
+            echo "清理完成：没有超过 24 小时的已完成记录"
             exit 0
           fi
+
           count=$(echo "$to_delete" | wc -l | tr -d ' ')
+          echo "待删除 $count 条超过 24 小时的已完成记录（并发 10 路）"
           echo "$to_delete" | xargs -P 10 -I{} sh -c 'gh run delete "$1" --repo "$2" >/dev/null 2>&1 || true' _ {} "$GITHUB_REPOSITORY"
           echo "清理完成：保留最近 24 小时记录及所有未完成记录"
